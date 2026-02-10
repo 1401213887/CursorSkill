@@ -1,0 +1,30 @@
+{
+  "root_dir": "W:/S1UnrealSharedDoc",
+  "test_root_dir": "",
+  "max_read_bytes": 262144,
+  "max_read_lines": 4000,
+  "upload_max_bytes": 10485760,
+  "mask_rules": {
+    "enabled": false,
+    "keyword_blacklist": [
+      "password=",
+      "AccessKey",
+      "SecretKey"
+    ],
+    "regex_blacklist": [
+      "AKIA[0-9A-Z]{16}"
+    ]
+  },
+  "standards": {
+    "default_paths": [
+      "规范",
+      "Standards",
+      "Guidelines"
+    ],
+    "keywords": [
+      "规范",
+      "Standard",
+      "Guideline"
+    ]
+  }
+}
