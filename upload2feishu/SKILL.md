@@ -9,8 +9,8 @@ description: 将本地文本文件上传到飞书云文档或原始文件空间�
 
 将指定文件上传到飞书，支持两种模式：
 
-- 默认模式：优先转换为飞书云文档（若缺少 `feishu-docx`，自动降级为原始文件上传）
-- 原始模式：直接上传原始文件（保留 `.md/.txt` 等格式，不依赖 `feishu-docx`）
+- 默认模式：直接上传原始文件（`raw=true`，保留 `.md/.txt` 等格式，不依赖 `feishu-docx`）
+- 云文档模式（可选）：仅在明确要求时使用 `raw=false`，尝试转换为飞书云文档
 
 默认目标文件夹：`LftxfwYm3lttjjdtO3DcscIEncA`
 
@@ -62,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE/.cursor/skills/upload
   "file": "待上传文件绝对路径",
   "title": "文档标题（可选）",
   "folder": "飞书文件夹token（可选）",
-  "raw": false
+  "raw": true
 }
 ```
 
@@ -73,13 +73,15 @@ py -3.11 "$SkillRoot/scripts/feishu_upload.py" --json "<工作区>/_feishu_uploa
 ```
 
 5. 上传结束后删除 `_feishu_upload_config.json`（成功和失败都要清理）。
-6. 向用户汇报结果：标题、模式（云文档/原始文件）、链接（若有）。
+6. 向用户汇报结果：标题、模式（原始文件/云文档）、链接（若有）。
 
 ## 处理规则
 
 - 不直接在命令行拼中文参数；统一通过 JSON 传参。
-- `raw=true` 时上传原始文件。
-- `raw=false` 或缺省时优先云文档；若未安装 `feishu-docx` 或执行失败，自动降级为原始文件上传（保证命令可独立执行）。
+- `raw=true`（默认）时上传原始文件。
+- `.md/.markdown` 文件一律按原始文件上传，避免飞书排版（即使未显式传 `raw`）。
+- 仅当用户明确要求飞书云文档时，才设置 `raw=false`。
+- `raw=false` 时尝试云文档；若未安装 `feishu-docx` 或执行失败，自动降级为原始文件上传（保证命令可独立执行）。
 - 如果报权限错误，提醒用户把应用 `CursorFeishuDoc` 添加为目标文件夹协作者。
 - 凭据读取优先级（脚本内置）：
   - 1) 环境变量：`FEISHU_APP_ID` / `FEISHU_APP_SECRET`
@@ -94,7 +96,7 @@ py -3.11 "$SkillRoot/scripts/feishu_upload.py" --json "<工作区>/_feishu_uploa
 
 - Python 3.11（建议使用 `py -3.11` 调用）
 - `requests`（必需，见 `scripts/requirements.txt`）
-- `feishu-docx`（可选，仅用于云文档优先路径）
+- `feishu-docx`（可选，仅用于显式云文档模式）
 - 首次安装依赖建议执行：
   - `py -3.11 -m pip install -r "$SkillRoot/scripts/requirements.txt"`
 
@@ -136,9 +138,9 @@ py -3.11 "$SkillRoot/scripts/feishu_upload.py" --json "<工作区>/_feishu_uploa
 ## 已通过的端到端测试样例
 
 - 测试文件：`F:/UnrealEngine/Engine/Source/Runtime/Renderer/Private/InstanceCulling/InstanceCulling_BasePass_Integration.md`
-- 云文档模式（`raw=false`）成功链接：
+- 云文档模式（`raw=false`，显式请求时）成功链接：
   - `https://feishu.cn/docx/DOTedTVbSo7EPox0sQvcMTyonYQ`
-- 云文档模式（`raw=false`）成功链接（本次会话）：
+- 云文档模式（`raw=false`，显式请求时）成功链接（本次会话）：
   - `https://feishu.cn/docx/IEUvdHalfo5KU7xaer2cKdgrnlc`
 - 原始文件模式（`raw=true`）成功链接：
   - `https://sarosgame.feishu.cn/file/Mv0db81muoFt4lxETQJctpqinvg`
@@ -148,4 +150,4 @@ py -3.11 "$SkillRoot/scripts/feishu_upload.py" --json "<工作区>/_feishu_uploa
 - 若云文档模式偶发 `SSL EOF`，按相同参数重试一次，通常可恢复。
 - 若执行 `feishu-docx.exe` 报 `UnexpectedToken ... config`，说明 PowerShell 调用方式错误，改为：
   - `& "$env:USERPROFILE/AppData/Local/Programs/Python/Python311/Scripts/feishu-docx.exe" config show`
-- 若未安装 `feishu-docx`，默认会自动降级为原始文件上传，这属于预期行为。
+- 若未安装 `feishu-docx`，云文档模式会自动降级为原始文件上传，这属于预期行为。

@@ -13,12 +13,13 @@
     "file": "文件路径",
     "title": "文档标题（可选）",
     "folder": "文件夹token（可选）",
-    "raw": false
+    "raw": true
 }
 
 说明:
 - raw=true: 直接上传原始文件（不依赖 feishu-docx）
 - raw=false: 优先上传为云文档（若 feishu-docx 不可用，则自动降级为 raw 上传）
+- 对于 .md/.markdown 文件，会强制按 raw 上传，避免飞书排版
 """
 
 #pragma region Engine ZXB
@@ -37,6 +38,10 @@ DEFAULT_FOLDER_TOKEN = "LftxfwYm3lttjjdtO3DcscIEncA"
 SKILL_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 SKILL_AUTH_CONFIG_PATH = os.path.join(SKILL_ROOT_DIR, "config", "feishu_auth.json")
 LEGACY_FEISHU_DOCX_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".feishu-docx", "config.json")
+
+
+def _is_markdown_file(file_path: str) -> bool:
+    return os.path.splitext(file_path)[1].lower() in {".md", ".markdown"}
 
 
 def _print_console_safe(text: str, stream=None):
@@ -232,6 +237,11 @@ def main():
     else:
         parser.print_help()
         sys.exit(1)
+
+    if _is_markdown_file(file_path):
+        if not raw_mode:
+            print("提示: 检测到 Markdown 文件，已强制使用原始文件上传模式（不进行飞书排版）。")
+        raw_mode = True
 
     if raw_mode:
         upload_raw_file(file_path, folder_token, title)
