@@ -1,0 +1,2 @@
+requests
+# feishu-docx  # 可选：用于云文档模式；缺失时脚本会自动降级为 raw 上传
