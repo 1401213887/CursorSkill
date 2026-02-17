@@ -27,17 +27,66 @@
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
 
-import requests as http_requests
+# 自动检测并安装 requests 模块（如果需要）
+try:
+    import requests as http_requests
+except ImportError:
+    print("正在检测 requests 模块...")
+    try:
+        # 尝试安装 requests
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--user", "requests"],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if result.returncode == 0:
+            print("✓ requests 安装成功")
+            # 清除模块缓存并重新导入
+            if 'requests' in sys.modules:
+                del sys.modules['requests']
+            import requests as http_requests
+        else:
+            print("❌ 自动安装 requests 失败")
+            print("请手动运行以下命令安装:")
+            print(f"  {sys.executable} -m pip install --user requests")
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ 安装 requests 时出错: {e}")
+        print("请手动运行以下命令安装:")
+        print(f"  {sys.executable} -m pip install --user requests")
+        sys.exit(1)
 
 
 DEFAULT_FOLDER_TOKEN = "LftxfwYm3lttjjdtO3DcscIEncA"
-SKILL_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-SKILL_AUTH_CONFIG_PATH = os.path.join(SKILL_ROOT_DIR, "config", "feishu_auth.json")
-LEGACY_FEISHU_DOCX_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".feishu-docx", "config.json")
+
+# 跨平台路径处理
+def _get_skill_root_dir():
+    """获取 skill 根目录，支持 macOS 和 Windows"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(script_dir, os.pardir))
+
+def _get_config_path():
+    """获取配置文件路径，支持跨平台"""
+    skill_root = _get_skill_root_dir()
+    return os.path.join(skill_root, "config", "feishu_auth.json")
+
+def _get_legacy_config_path():
+    """获取兼容的旧配置文件路径"""
+    home = os.path.expanduser("~")
+    if platform.system() == "Windows":
+        return os.path.join(home, ".feishu-docx", "config.json")
+    else:
+        return os.path.join(home, ".feishu-docx", "config.json")
+
+SKILL_ROOT_DIR = _get_skill_root_dir()
+SKILL_AUTH_CONFIG_PATH = _get_config_path()
+LEGACY_FEISHU_DOCX_CONFIG_PATH = _get_legacy_config_path()
 
 
 def _is_markdown_file(file_path: str) -> bool:
@@ -61,14 +110,34 @@ def _read_json(path: str):
 
 
 def _resolve_feishu_docx_executable():
+    """查找 feishu-docx 可执行文件，支持 macOS 和 Windows"""
+    # 首先尝试通过 PATH 查找
     command = shutil.which("feishu-docx")
     if command:
         return command
-
-    candidates = [
-        os.path.join(os.path.dirname(sys.executable), "Scripts", "feishu-docx.exe"),
-        os.path.join(os.path.expanduser("~"), "AppData", "Local", "Programs", "Python", "Python311", "Scripts", "feishu-docx.exe"),
-    ]
+    
+    # 平台特定的查找路径
+    system = platform.system()
+    home = os.path.expanduser("~")
+    
+    if system == "Windows":
+        # Windows 特定路径
+        candidates = [
+            os.path.join(os.path.dirname(sys.executable), "Scripts", "feishu-docx.exe"),
+            os.path.join(home, "AppData", "Local", "Programs", "Python", "Python311", "Scripts", "feishu-docx.exe"),
+            os.path.join(home, "AppData", "Local", "Programs", "Python", "Python310", "Scripts", "feishu-docx.exe"),
+            os.path.join(home, "AppData", "Local", "Programs", "Python", "Python39", "Scripts", "feishu-docx.exe"),
+        ]
+    else:
+        # macOS/Linux 特定路径
+        candidates = [
+            os.path.join(os.path.dirname(sys.executable), "feishu-docx"),
+            os.path.join(home, ".local", "bin", "feishu-docx"),
+            os.path.join(home, "Library", "Python", "3.11", "bin", "feishu-docx"),
+            os.path.join(home, "Library", "Python", "3.10", "bin", "feishu-docx"),
+            os.path.join(home, "Library", "Python", "3.9", "bin", "feishu-docx"),
+        ]
+    
     for candidate in candidates:
         if os.path.exists(candidate):
             return candidate
@@ -76,44 +145,87 @@ def _resolve_feishu_docx_executable():
 
 
 def _load_app_credentials():
+    """加载飞书应用凭据，支持环境变量和配置文件"""
+    # 优先级1: 环境变量
     app_id = os.getenv("FEISHU_APP_ID")
     app_secret = os.getenv("FEISHU_APP_SECRET")
     if app_id and app_secret:
         return app_id, app_secret
 
+    # 优先级2: 配置文件
     config_paths = [SKILL_AUTH_CONFIG_PATH, LEGACY_FEISHU_DOCX_CONFIG_PATH]
     for path in config_paths:
         if os.path.exists(path):
             try:
                 config = _read_json(path)
-            except Exception:
+                app_id = config.get("app_id")
+                app_secret = config.get("app_secret")
+                # 检查是否是模板占位符
+                if app_id and app_secret and app_id != "cli_xxx" and app_secret != "xxx":
+                    return app_id, app_secret
+                elif app_id == "cli_xxx" or app_secret == "xxx":
+                    print(f"⚠️  配置文件 {path} 包含模板占位符，需要填写真实凭据")
+            except json.JSONDecodeError as e:
+                print(f"警告: 配置文件格式错误 {path}: {e}")
                 continue
-            app_id = config.get("app_id")
-            app_secret = config.get("app_secret")
-            if app_id and app_secret:
-                return app_id, app_secret
+            except Exception as e:
+                print(f"警告: 读取配置文件失败 {path}: {e}")
+                continue
 
-    print("错误: 未找到飞书应用凭据。")
-    print("请任选其一完成配置：")
-    print("1) 环境变量 FEISHU_APP_ID / FEISHU_APP_SECRET")
-    print(f"2) Skill 本地配置文件: {SKILL_AUTH_CONFIG_PATH}")
-    print(f"3) 兼容配置文件: {LEGACY_FEISHU_DOCX_CONFIG_PATH}")
+    # 优先级3: 尝试从模板创建配置文件（如果不存在）
+    template_path = os.path.join(SKILL_ROOT_DIR, "config", "feishu_auth.template.json")
+    if not os.path.exists(SKILL_AUTH_CONFIG_PATH) and os.path.exists(template_path):
+        try:
+            import shutil
+            shutil.copy(template_path, SKILL_AUTH_CONFIG_PATH)
+            print(f"ℹ️  已从模板创建配置文件: {SKILL_AUTH_CONFIG_PATH}")
+            print("   请编辑该文件，填写你的 app_id 和 app_secret")
+        except Exception as e:
+            print(f"⚠️  无法从模板创建配置文件: {e}")
+
+    # 未找到有效凭据
+    print("❌ 错误: 未找到有效的飞书应用凭据。")
+    print("\n请任选其一完成配置：")
+    print("1) 环境变量方式（推荐用于 CI/CD）:")
+    print("   export FEISHU_APP_ID='your_app_id'")
+    print("   export FEISHU_APP_SECRET='your_app_secret'")
+    print(f"\n2) Skill 本地配置文件（推荐用于本地开发）:")
+    print(f"   {SKILL_AUTH_CONFIG_PATH}")
+    if os.path.exists(template_path):
+        print("   已从模板自动创建，请编辑并填写 app_id 和 app_secret")
+    else:
+        print("   从 config/feishu_auth.template.json 复制并填写 app_id 和 app_secret")
+    print(f"\n3) 兼容旧配置文件:")
+    print(f"   {LEGACY_FEISHU_DOCX_CONFIG_PATH}")
+    print("\n💡 提示: 如果 skill 已包含默认配置文件，可以直接使用，无需额外配置。")
     sys.exit(1)
 
 
 def _get_tenant_token():
+    """获取飞书访问令牌"""
     app_id, app_secret = _load_app_credentials()
-    response = http_requests.post(
-        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-        json={"app_id": app_id, "app_secret": app_secret},
-        timeout=15,
-    )
-    response.raise_for_status()
-    result = response.json()
-    if result.get("code") != 0:
-        print(f"错误: 获取 tenant_access_token 失败 - {result.get('msg')}")
+    try:
+        response = http_requests.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            json={"app_id": app_id, "app_secret": app_secret},
+            timeout=15,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if result.get("code") != 0:
+            print(f"❌ 错误: 获取 tenant_access_token 失败")
+            print(f"   错误码: {result.get('code')}")
+            print(f"   错误信息: {result.get('msg')}")
+            print("\n请检查:")
+            print("1. app_id 和 app_secret 是否正确")
+            print("2. 网络连接是否正常")
+            print("3. 飞书应用是否已启用")
+            sys.exit(1)
+        return result["tenant_access_token"]
+    except http_requests.RequestException as e:
+        print(f"❌ 网络请求失败: {e}")
+        print("\n请检查网络连接或稍后重试")
         sys.exit(1)
-    return result["tenant_access_token"]
 
 
 def upload_raw_file(file_path: str, folder_token: str, title: str = None):
@@ -150,15 +262,40 @@ def upload_raw_file(file_path: str, folder_token: str, title: str = None):
         }
         response = http_requests.post(url, headers=headers, files=form_data, timeout=60)
 
-    result = response.json()
+    try:
+        result = response.json()
+    except json.JSONDecodeError:
+        print(f"❌ 上传失败: 服务器返回了无效的 JSON 响应")
+        print(f"   响应状态码: {response.status_code}")
+        print(f"   响应内容: {response.text[:200]}")
+        sys.exit(1)
+    
     if result.get("code") != 0:
-        print(f"上传失败! 错误码: {result.get('code')}, 信息: {result.get('msg')}")
+        error_code = result.get("code")
+        error_msg = result.get("msg", "未知错误")
+        print(f"❌ 上传失败!")
+        print(f"   错误码: {error_code}")
+        print(f"   错误信息: {error_msg}")
+        
+        # 常见错误提示
+        if error_code == 99991663:
+            print("\n提示: 可能是权限问题，请确保:")
+            print("1. 飞书应用有文件上传权限")
+            print("2. 目标文件夹已添加应用为协作者")
+        elif error_code == 99991664:
+            print("\n提示: 文件夹 token 可能无效，请检查 folder 参数")
+        
         sys.exit(1)
 
     file_token = result.get("data", {}).get("file_token", "")
+    if not file_token:
+        print("❌ 上传失败: 服务器未返回文件 token")
+        print(f"   响应: {result}")
+        sys.exit(1)
+    
     file_url = f"https://sarosgame.feishu.cn/file/{file_token}"
-    print("上传成功!")
-    print(f"文件链接: {file_url}")
+    print("✅ 上传成功!")
+    print(f"📎 文件链接: {file_url}")
     print("上传完成!")
 
 
