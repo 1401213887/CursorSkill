@@ -1,0 +1,28 @@
+{
+  "name": "upload2git",
+  "version": "1.0.0",
+  "description": "上传文件到 GitHub 仓库的 Cursor skill，支持 SSH 和 HTTPS 智能回退",
+  "author": "Cursor User",
+  "platforms": ["macOS", "Linux", "Windows"],
+  "commands": {
+    "upload2git": {
+      "script": "upload2git.sh",
+      "description": "上传指定文件到 GitHub 仓库",
+      "usage": "upload2git <文件路径1> [文件路径2] ..."
+    }
+  },
+  "dependencies": {
+    "git": ">=2.0.0"
+  },
+  "features": [
+    "SSH 和 HTTPS 智能回退",
+    "跨平台支持 (macOS/Linux/Windows)",
+    "自动仓库管理",
+    "相对路径和绝对路径支持"
+  ],
+  "repository": {
+    "url": "https://github.com/1401213887/AiDoc.git",
+    "ssh": "git@github.com:1401213887/AiDoc.git",
+    "https": "https://github.com/1401213887/AiDoc.git"
+  }
+}
